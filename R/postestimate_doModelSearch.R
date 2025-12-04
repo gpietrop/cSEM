@@ -10,32 +10,32 @@
 
 # --- Definition of constant necessary for create_sem_model_string_from_matrix 
 
-.variables <- c("eta1", "eta2", "eta3", "eta4", "eta5", "eta6") 
-.n_variables <- length(.variables)
-.measurement_model <- list(
-  eta1 = c("y1", "y2", "y3"),
-  eta2 = c("y4", "y5", "y6"),
-  eta3 = c("y7", "y8", "y9"), 
-  eta4 = c("y10", "y11", "y12"),
-  eta5 = c("y13", "y14", "y15"),
-  eta6 = c("y16", "y17", "y18")
-)
 .type_of_variable <- c(eta1 = "composite", eta2 = "composite", 
                       eta3 = "composite", eta4 = "composite",
                       eta5 = "composite", eta6 = "composite")
 .structural_coefficients <- list()
 
-# --- Mutazione --------------------------------------
-.agas_mutation <- function(object, parent) {
+# Function to transform the measurement model into a list
+transform_measurement_model <- function(mes_mod) {
+  measurement_model_list <- list()
+  for (i in 1:nrow(mes_mod)) {
+    latent_var <- rownames(mes_mod)[i]
+    indicators <- colnames(mes_mod)[which(mes_mod[i, ] == 1)]
+    measurement_model_list[[latent_var]] <- indicators
+  }
+  return(measurement_model_list)
+}
+
+.agas_mutation <- function(object, parent, .n_variables, .mutation_prob = 0.2, .n_exogenous) {
   mutate <- parent <- as.vector(object@population[parent,])
   mutate_matrix <- matrix(mutate, nrow = .n_variables, byrow = TRUE)
   
   diag(mutate_matrix) <- 0  
   
   # Ensure the first three rows are all zeros
-  mutate_matrix[1, ] <- 0
-  mutate_matrix[2, ] <- 0
-  mutate_matrix[3, ] <- 0 
+  for (i in 1:.n_exogenous) {
+    mutate_matrix[i, ] <- 0
+  }
   
   mutate_vector <- as.vector(t(mutate_matrix))
   
@@ -46,8 +46,9 @@
   # Convert row and column indices to vector indices
   if (length(indices) > 0) {
     subdiag_indices <- (indices[, 1] - 1) * .n_variables + indices[, 2]
+    
     # Select a random index from the sub-diagonal indices 
-    if (length(subdiag_indices) > 0 && runif(1) <= 0.2) {
+    if (length(subdiag_indices) > 0 && runif(1) <= .mutation_prob) {  # Use mutation_prob here
       available_indices <- subdiag_indices  # Keep track of available indices to flip
       while (length(available_indices) > 1) {
         j <- sample(available_indices, size = 1)
@@ -67,8 +68,10 @@
       }
     }
   }
+  
   return(mutate_vector)
 }
+
 
 # --- DFS cycle routine -------------------------------------------------------
 #' @keywords internal
@@ -113,8 +116,8 @@ dfs_util <- function(graph, v, visited, recStack, adj_matrix) {
 }
 
 #' @keywords internal
-.check_matrix_criteria <- function(adj_matrix) {
-  if (any(rowSums(adj_matrix[1:3, , drop = FALSE]) != 0)) return(FALSE) # first row all zeros
+.check_matrix_criteria <- function(adj_matrix, .n_exogenous) {
+  if (any(rowSums(adj_matrix[1:.n_exogenous, , drop = FALSE]) != 0)) return(FALSE) # first row all zeros
   if (any(diag(adj_matrix) != 0)) return(FALSE)                       # diag all zeros
   TRUE
 }
@@ -190,7 +193,7 @@ dfs_util <- function(graph, v, visited, recStack, adj_matrix) {
 # --- Create model string from matrix -----------------------------------------
 
 #' @keywords internal
-.create_sem_model_string_from_matrix <- function(adj_matrix) {
+.create_sem_model_string_from_matrix <- function(adj_matrix, .measurement_model, .variables) {
   model_string <- "# Composite model\n" # Initialize the model string
   
   # Include the measurement model specified in the input for composite types
@@ -230,17 +233,7 @@ dfs_util <- function(graph, v, visited, recStack, adj_matrix) {
 # --- Fitness ---------------------------------------------------
 
 #' @keywords internal
-.bic_fitness <- function(adj_matrix, dataset_generated) {
-  model_string <- .create_sem_model_string_from_matrix(adj_matrix)
-  out <- csem(.data = dataset_generated, .model = model_string)
-  model_criteria <- calculateModelSelectionCriteria(
-    out, .by_equation = FALSE, .only_structural = FALSE
-  )
-  model_criteria$BIC
-}
-
-#' @keywords internal
-.agas_fitness <- function(matrix_vector, dataset_generated) {
+.agas_fitness <- function(matrix_vector, dataset_generated, .n_exogenous, .measurement_model, .variables) {
   n_variables <- length(.variables)
   adj_matrix  <- matrix(matrix_vector, nrow = n_variables, byrow = TRUE)
   
@@ -248,17 +241,23 @@ dfs_util <- function(graph, v, visited, recStack, adj_matrix) {
     adj_matrix <- .repair_individual_unused(adj_matrix)
   }
   
-  if (!.check_matrix_criteria(adj_matrix)) return(-100000)
+  if (!.check_matrix_criteria(adj_matrix, .n_exogenous)) return(-100000)
   
   g <- igraph::graph_from_adjacency_matrix(adj_matrix, mode = "directed", diag = FALSE)
   if (has_cycle_dfs(g, adj_matrix)) return(-100000)
   
-  model_string <- .create_sem_model_string_from_matrix(adj_matrix)
+  model_string <- .create_sem_model_string_from_matrix(adj_matrix, .measurement_model, .variables)
   out <- csem(.data = dataset_generated, .model = model_string)
   ver <- verify(out)
   if (!sum(ver) == 0) return(-100000)
   
-  sem_fitness <- -.bic_fitness(adj_matrix, dataset_generated)
+  model_criteria <- calculateModelSelectionCriteria(
+    out, .by_equation = FALSE, .only_structural = FALSE
+  )
+  
+  sem_fitness <- -model_criteria$BIC
+  
+  
   if (is.na(sem_fitness)) return(-100000)
   
   if (sem_fitness > .pkg_state$best_fitness) {
@@ -286,10 +285,18 @@ dfs_util <- function(graph, v, visited, recStack, adj_matrix) {
 #' @references \insertAllCited{}
 #' @export
 doModelSearch <- function(.object = NULL, 
+                          .n_exogenous = 3,
                           .popsize = 100, 
-                          .maxiter=50,
-                          seeds = c(2, 4, 5)) {
+                          .maxiter=10,
+                          .mutation_prob = 0.2,
+                          .seeds = c(2, 4, 5)) {
   if (is.null(.object)) stop("`.object` must be a cSEM results object.")
+  
+  # Retrieve information on the model (number variables, name variables)
+  path_estimates <- .object$Estimates$Path_estimates 
+  .variables <- rownames(path_estimates)
+  .n_variables <- length(.variables)
+  .measurement_model <- transform_measurement_model(.object$Information$Model$measurement)
   
   # compute criteria once
   model_criteria <- calculateModelSelectionCriteria(
@@ -301,13 +308,14 @@ doModelSearch <- function(.object = NULL,
   BIC = model_criteria$BIC
   print(BIC)
   
-  agas_dataset <- .object$Information$Data
+  .agas_dataset <- .object$Information$Data
   
-  seeds <- as.integer(seeds)
-  mat_list <- vector("list", length(seeds))
-  names(mat_list) <- as.character(seeds)
+  seeds <- as.integer(.seeds)
+  mat_list <- vector("list", length(.seeds))
+  names(mat_list) <- as.character(.seeds)
   
-  for (i in seq_along(seeds)) {
+  for (i in seq_along(.seeds)) {
+    
     ga_control <- GA::ga(
         type = "binary",
         nBits = .n_variables * .n_variables,
@@ -315,11 +323,11 @@ doModelSearch <- function(.object = NULL,
         maxiter = .maxiter,
         pmutation = 1.0,
         pcrossover = 0.8,
-        fitness = function(x) .agas_fitness(x, agas_dataset),
+        fitness = function(x) .agas_fitness(x, .agas_dataset, .n_exogenous, .measurement_model, .variables),
         elitism = TRUE,
         parallel = FALSE,
         seed = i,
-        mutation = .agas_mutation
+        mutation = function(object, parent) .agas_mutation(object, parent, .n_variables, .mutation_prob, .n_exogenous)
       )
     mat_list[[i]] <- .pkg_state$best_individual
   }

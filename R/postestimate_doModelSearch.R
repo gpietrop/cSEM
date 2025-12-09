@@ -7,18 +7,18 @@
 .pkg_state$best_fitness         <- -Inf
 
 # Function to transform the measurement model into a list
-transform_measurement_model <- function(mes_mod) {
+.transform_measurement_model <- function(.mes_mod) {
   measurement_model_list <- list()
-  for (i in 1:nrow(mes_mod)) {
-    latent_var <- rownames(mes_mod)[i]
-    indicators <- colnames(mes_mod)[which(mes_mod[i, ] == 1)]
+  for (i in 1:nrow(.mes_mod)) {
+    latent_var <- rownames(.mes_mod)[i]
+    indicators <- colnames(.mes_mod)[which(.mes_mod[i, ] == 1)]
     measurement_model_list[[latent_var]] <- indicators
   }
   return(measurement_model_list)
 }
 
-.agas_mutation <- function(object, parent, .n_variables, .mutation_prob, .n_exogenous) {
-  mutate <- parent <- as.vector(object@population[parent,])
+.agas_mutation <- function(.object, .parent, .n_variables, .mutation_prob, .n_exogenous) {
+  mutate <- .parent <- as.vector(.object@population[.parent,])
   mutate_matrix <- matrix(mutate, nrow = .n_variables, byrow = TRUE)
   
   diag(mutate_matrix) <- 0  
@@ -47,7 +47,7 @@ transform_measurement_model <- function(mes_mod) {
         
         # Check if the mutation creates a cycle
         adj_matrix <- matrix(mutate_vector, nrow = .n_variables, byrow = TRUE)
-        has_cycle <- has_cycle_matrix(adj_matrix)
+        has_cycle <- .has_cycle_matrix(adj_matrix)
         
         if (has_cycle) {
           mutate_vector[j] <- abs(mutate_vector[j] - 1)
@@ -65,8 +65,8 @@ transform_measurement_model <- function(mes_mod) {
 
 # --- DFS cycle routine -------------------------------------------------------
 #' @keywords internal
-has_cycle_matrix <- function(adj) {
-  n <- nrow(adj)
+.has_cycle_matrix <- function(.adj) {
+  n <- nrow(.adj)
   # 0 = unvisited, 1 = visiting, 2 = done
   state <- integer(n)
   
@@ -76,7 +76,7 @@ has_cycle_matrix <- function(adj) {
     
     state[u] <<- 1  # mark as visiting
     
-    neighbors <- which(adj[u, ] != 0)
+    neighbors <- which(.adj[u, ] != 0)
     for (v in neighbors) {
       if (dfs(v)) return(TRUE)
     }
@@ -97,30 +97,30 @@ has_cycle_matrix <- function(adj) {
 # --- Matrix utils ------------------------------
 
 #' @keywords internal
-.matrix_to_string <- function(m) {
-  row_strs <- apply(m, 1, paste, collapse = ",")
+.matrix_to_string <- function(.m) {
+  row_strs <- apply(.m, 1, paste, collapse = ",")
   paste(row_strs, collapse = ";")
 }
 
 #' @keywords internal
-.check_matrix_criteria <- function(adj_matrix, .n_exogenous) {
-  if (any(rowSums(adj_matrix[1:.n_exogenous, , drop = FALSE]) != 0)) return(FALSE) # first row all zeros
-  if (any(diag(adj_matrix) != 0)) return(FALSE)                       # diag all zeros
+.check_matrix_criteria <- function(.adj_matrix, .n_exogenous) {
+  if (any(rowSums(.adj_matrix[1:.n_exogenous, , drop = FALSE]) != 0)) return(FALSE) # exogenous all zeros
+  if (any(diag(.adj_matrix) != 0)) return(FALSE)                       # diag all zeros
   TRUE
 }
 
 
 #' @keywords internal
-.check_matrix <- function(mat) {
-  n <- nrow(mat)
-  for (i in seq_len(n)) if (all(mat[i, ] == 0) && all(mat[, i] == 0)) return(FALSE)
+.check_matrix <- function(.mat) {
+  n <- nrow(.mat)
+  for (i in seq_len(n)) if (all(.mat[i, ] == 0) && all(.mat[, i] == 0)) return(FALSE)
   TRUE
 }
 
 # --- Create model string from matrix -----------------------------------------
 
 #' @keywords internal
-.create_sem_model_string_from_matrix <- function(adj_matrix, .measurement_model, .variables) {
+.create_sem_model_string_from_matrix <- function(.adj_matrix, .measurement_model, .variables) {
   .structural_coefficients <- list()
   .type_of_variable <- setNames(rep("composite", length(.variables)), .variables)
   
@@ -147,7 +147,7 @@ has_cycle_matrix <- function(adj) {
   model_string <- paste(model_string, "\n# Structural model\n")
   for (i in seq_along(.variables)) {
     dependent <- .variables[i]
-    predictors <- .variables[adj_matrix[i, ] == 1]
+    predictors <- .variables[.adj_matrix[i, ] == 1]
     if (length(predictors) > 0) {
       relationship_str <- paste(predictors, collapse = " + ")
       model_string <- paste(model_string, sprintf("  %s ~ %s\n", dependent, relationship_str), sep = "")
@@ -163,19 +163,19 @@ has_cycle_matrix <- function(adj) {
 # --- Fitness ---------------------------------------------------
 
 #' @keywords internal
-.agas_fitness <- function(matrix_vector, dataset_generated, .n_exogenous, .measurement_model, .variables, .only_structural) {
+.agas_fitness <- function(.matrix_vector, .dataset_generated, .n_exogenous, .measurement_model, .variables, .only_structural) {
   n_variables <- length(.variables)
-  adj_matrix  <- matrix(matrix_vector, nrow = n_variables, byrow = TRUE)
+  adj_matrix  <- matrix(.matrix_vector, nrow = n_variables, byrow = TRUE)
   
   if (!.check_matrix(adj_matrix)) return(-100000)
     # adj_matrix <- .repair_individual_unused(adj_matrix)
   
   if (!.check_matrix_criteria(adj_matrix, .n_exogenous)) return(-100000)
   
-  if (has_cycle_matrix(adj_matrix)) return(-100000)
+  if (.has_cycle_matrix(adj_matrix)) return(-100000)
   
   model_string <- .create_sem_model_string_from_matrix(adj_matrix, .measurement_model, .variables)
-  out <- csem(.data = dataset_generated, .model = model_string)
+  out <- csem(.data = .dataset_generated, .model = model_string)
   ver <- verify(out)
   if (!sum(ver) == 0) return(-100000)
   
@@ -207,7 +207,7 @@ has_cycle_matrix <- function(adj) {
 #'
 #' @usage doModelSearch(.object = NULL)
 #'
-#' @return A numeric value (demo returns BIC and fitness while you experiment).
+#' @return The mean matrix generated by the AGAS-PLS runs
 #' @inheritParams csem_arguments
 #' @seealso [cSEMResults]
 #' @references \insertAllCited{}
@@ -225,7 +225,7 @@ doModelSearch <- function(.object = NULL,
   path_estimates <- .object$Estimates$Path_estimates 
   .variables <- rownames(path_estimates)
   .n_variables <- length(.variables)
-  .measurement_model <- transform_measurement_model(.object$Information$Model$measurement)
+  .measurement_model <- .transform_measurement_model(.object$Information$Model$measurement)
   
   # compute criteria once
   model_criteria <- calculateModelSelectionCriteria(

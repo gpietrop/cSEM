@@ -1,10 +1,10 @@
 # --- Internal helpers (same file, not exported) ------------------------------
 
 # --- Internal state (no globals leaked) --------------------------------------
-.pkg_state <- new.env(parent = emptyenv())
-.pkg_state$best_individuals_all <- list()
-.pkg_state$best_individual      <- NULL
-.pkg_state$best_fitness         <- -Inf
+# .pkg_state <- new.env(parent = emptyenv())
+# .pkg_state$best_individuals_all <- list()
+# .pkg_state$best_individual      <- NULL
+# .pkg_state$best_fitness         <- -Inf
 
 # Function to transform the measurement model into a list
 .transform_measurement_model <- function(.mes_mod) {
@@ -188,11 +188,11 @@
   
   if (is.na(sem_fitness)) return(-100000)
   
-  if (sem_fitness > .pkg_state$best_fitness) {
-    .pkg_state$best_individual      <- adj_matrix
-    .pkg_state$best_fitness         <- sem_fitness
-    .pkg_state$best_individuals_all <- append(.pkg_state$best_individuals_all, list(adj_matrix))
-  }
+  # if (sem_fitness > .pkg_state$best_fitness) {
+  #  .pkg_state$best_individual      <- adj_matrix
+  #  .pkg_state$best_fitness         <- sem_fitness
+  #  .pkg_state$best_individuals_all <- append(.pkg_state$best_individuals_all, list(adj_matrix))
+  # }
   
   sem_fitness
 }
@@ -217,8 +217,8 @@ doModelSearch <- function(.object = NULL,
                           .popsize = 20, 
                           .maxiter=20,
                           .mutation_prob = 0.5,
-                          .seeds = c(2, 4, 5), 
-                          .only_structural = TRUE) {
+                          .seeds = 1, 
+                          .only_structural = FALSE) {
   if (is.null(.object)) stop("`.object` must be a cSEM results object.")
   
   # Retrieve information on the model (number variables, name variables)
@@ -243,36 +243,46 @@ doModelSearch <- function(.object = NULL,
   mat_list <- vector("list", length(.seeds))
   names(mat_list) <- as.character(.seeds)
   
-  for (i in seq_along(.seeds)) {
+  # for (i in seq_along(.seeds)) {
     
-    .pkg_state$best_individuals_all <- list()
-    .pkg_state$best_individual      <- NULL
-    .pkg_state$best_fitness         <- -Inf
+    # .pkg_state$best_individuals_all <- list()
+    # .pkg_state$best_individual      <- NULL
+    # .pkg_state$best_fitness         <- -Inf
     
-    ga_control <- GA::ga(
-        type = "binary",
-        nBits = .n_variables * .n_variables,
-        popSize = .popsize,
-        maxiter = .maxiter,
-        pmutation = 1.0,
-        pcrossover = 0.8,
-        fitness = function(x) .agas_fitness(x, .agas_dataset, .n_exogenous, .measurement_model, .variables, .only_structural),
-        elitism = TRUE,
-        parallel = FALSE,
-        seed = i,
-        mutation = function(object, parent) .agas_mutation(object, parent, .n_variables, .mutation_prob, .n_exogenous)
-      )
-    mat_list[[i]] <- .pkg_state$best_individual
-  }
+  ga_control <- GA::ga(
+      type = "binary",
+      nBits = .n_variables * .n_variables,
+      popSize = .popsize,
+      maxiter = .maxiter,
+      pmutation = 1.0,
+      pcrossover = 0.8,
+      fitness = function(x) .agas_fitness(x, .agas_dataset, .n_exogenous, .measurement_model, .variables, .only_structural),
+      elitism = TRUE,
+      parallel = FALSE,
+      seed = 1,
+      mutation = function(object, parent) .agas_mutation(object, parent, .n_variables, .mutation_prob, .n_exogenous),
+      keepBest = TRUE
+    )
+  # mat_list[[i]] <- .pkg_state$best_individual
+  # }
   
-  arr <- array(unlist(mat_list),
-               dim = c(.n_variables, .n_variables, length(mat_list)))
-  mean_mat <- apply(arr, c(1, 2), mean, na.rm = TRUE)
-  rownames(mean_mat) <- .variables
-  colnames(mean_mat) <- .variables
+  # arr <- array(unlist(mat_list),
+  #             dim = c(.n_variables, .n_variables, length(mat_list)))
+  # mean_mat <- apply(arr, c(1, 2), mean, na.rm = TRUE)
   
-  print(mean_mat)
-  out <- .matrix_to_string(mean_mat)
-  return(out)
+  # print(mean_mat)
+  # out <- .matrix_to_string(mean_mat)
+  best <- unlist(ga_control@bestSol[.maxiter])
+  best_matrix <- matrix(best, nrow = .n_variables, ncol = .n_variables, byrow = TRUE)
+  
+  rownames(best_matrix) <- .variables
+  colnames(best_matrix) <- .variables
+  
+  best_fitness <- ga_control@fitnessValue
+  
+  return(list(
+    best_matrix  = best_matrix,
+    best_fitness = best_fitness
+  ))
   
 }

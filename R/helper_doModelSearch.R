@@ -1,4 +1,4 @@
-#' Internal: AGAS
+#' Internal: AGAS MUTATION
 .agas_mutation <- function(.object, .parent, .n_variables, .mutation_prob, .n_exogenous) {
   mutate <- .parent <- as.vector(.object@population[.parent,])
   mutate_matrix <- matrix(mutate, nrow = .n_variables, byrow = TRUE)
@@ -168,14 +168,7 @@
   
   sem_fitness <- -model_criteria$BIC
   
-  
   if (is.na(sem_fitness)) return(-100000)
-  
-  if (sem_fitness > .pkg_state$best_fitness) {
-    .pkg_state$best_individual      <- adj_matrix
-    .pkg_state$best_fitness         <- sem_fitness
-    .pkg_state$best_individuals_all <- append(.pkg_state$best_individuals_all, list(adj_matrix))
-  }
   
   sem_fitness
 }

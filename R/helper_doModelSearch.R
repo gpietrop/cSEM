@@ -1,5 +1,5 @@
 #' Internal: AGAS MUTATION
-.agas_mutation <- function(.object, .parent, .n_variables, .mutation_prob, .n_exogenous) {
+.agas_mutation <- function(.object, .parent, .n_variables, .n_exogenous) {
   mutate <- .parent <- as.vector(.object@population[.parent,])
   mutate_matrix <- matrix(mutate, nrow = .n_variables, byrow = TRUE)
   
@@ -21,7 +21,7 @@
     vector_indices <- (indices[, 1] - 1) * .n_variables + indices[, 2]
     
     # Select a random index from the sub-diagonal indices 
-    if (length(vector_indices) > 0 && runif(1) <= .mutation_prob) {  # Use mutation_prob here
+    if (length(vector_indices) > 0) {  # Use mutation_prob here
       available_indices <- vector_indices  # Keep track of available indices to flip
       while (length(available_indices) > 1) {
         j <- sample(available_indices, size = 1)
